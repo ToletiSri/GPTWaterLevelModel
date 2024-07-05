@@ -79,14 +79,14 @@ class Block(nn.Module):
 
 class GPTWaterLevelModel(nn.Module):
 
-    def __init__(self, vocab_size):
+    def __init__(self, TotalWaterLevels):
         super().__init__()
         # each token directly reads off the logits for the next token from a lookup table
-        self.token_embedding_table = nn.Embedding(vocab_size, cfg.n_embd)
+        self.token_embedding_table = nn.Embedding(TotalWaterLevels, cfg.n_embd)
         self.position_embedding_table = nn.Embedding(cfg.block_size, cfg.n_embd)
         self.blocks = nn.Sequential(*[Block(cfg.n_embd, n_head=cfg.n_head) for _ in range(cfg.n_layer)])
         self.ln_f = nn.LayerNorm(cfg.n_embd) # final layer norm
-        self.lm_head = nn.Linear(cfg.n_embd, vocab_size)
+        self.lm_head = nn.Linear(cfg.n_embd, TotalWaterLevels)
 
         # better init, not covered in the original GPT video, but important, will cover in followup video
         self.apply(self._init_weights)
