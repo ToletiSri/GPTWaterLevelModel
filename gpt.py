@@ -79,11 +79,11 @@ class Block(nn.Module):
 
 class GPTWaterLevelModel(nn.Module):
 
-    def __init__(self, TotalWaterLevels):
+    def __init__(self, TotalWaterLevels=700):
         super().__init__()
         # each token directly reads off the logits for the next token from a lookup table
         self.token_embedding_table = nn.Embedding(TotalWaterLevels, cfg.n_embd)
-        self.position_embedding_table = nn.Embedding(cfg.block_size, cfg.n_embd)
+        self.position_embedding_table = nn.Linear(2, cfg.n_embd) #.double()  # 2 - latitude, longitude
         self.blocks = nn.Sequential(*[Block(cfg.n_embd, n_head=cfg.n_head) for _ in range(cfg.n_layer)])
         self.ln_f = nn.LayerNorm(cfg.n_embd) # final layer norm
         self.lm_head = nn.Linear(cfg.n_embd, TotalWaterLevels)
@@ -99,20 +99,39 @@ class GPTWaterLevelModel(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None):
-        B, T = idx.shape
+   
 
-        # idx and targets are both (B,T) tensor of integers
-        tok_emb = self.token_embedding_table(idx) # (B,T,C)
-        pos_emb = self.position_embedding_table(torch.arange(T, device=cfg.device)) # (T,C)
+    def forward(self, idx, targets=None):
+        #print(idx.shape)
+        B, T, _ = idx.shape
+        idx_wl = idx[:,:,2] 
+        # idx_wl and targets are both (B,T) tensor of integers
+        #print(idx_wl.shape)
+        idx_latLong = idx[:, :, :2]         
+        # change water level from 3.07 to 7, i.e get indices. Min water level - 2, max water level 8.99
+        idx_wl = idx_wl*100 - 300       
+
+        # Ensure idx_wl is in the range of indices
+        min_wl, max_wl = 0, 799  # Mapping from original range (2 to 8.99)
+        idx_wl = torch.round(idx_wl).long()
+        idx_wl = torch.clamp(idx_wl, min=min_wl, max=max_wl)        
+
+        # Ensure idx_latLong is of type double
+        #idx_latLong = idx_latLong.double()
+        #print(idx_latLong.shape, idx_latLong.dtype)
+
+        tok_emb = self.token_embedding_table(idx_wl) # (B,T) --> (B,T,C)
+        pos_emb = self.position_embedding_table(idx_latLong) # (B,T,2) --> (B,T,C)
         x = tok_emb + pos_emb # (B,T,C)
-        x = self.blocks(x) # (B,T,C)
+        x = self.blocks(x.float()) # (B,T,C)
         x = self.ln_f(x) # (B,T,C)
         logits = self.lm_head(x) # (B,T,vocab_size)
 
         if targets is None:
-            loss = None
+            loss = None            
         else:
+            targets = targets*100 - 300
+            targets = torch.round(targets).long()
             B, T, C = logits.shape
             logits = logits.view(B*T, C)
             targets = targets.view(B*T)
@@ -120,19 +139,33 @@ class GPTWaterLevelModel(nn.Module):
 
         return logits, loss
 
-    def generate(self, idx, max_new_tokens):
+    def generate(self, currWaterLevel, max_next_values, next_coordinates):
         # idx is (B, T) array of indices in the current context
-        for _ in range(max_new_tokens):
+        for i in range(max_next_values):
             # crop idx to the last block_size tokens
-            idx_cond = idx[:, -cfg.block_size:]
+            idx_cond = currWaterLevel[:, -cfg.block_size:,:]
+            #print(idx_cond.shape)
             # get the predictions
             logits, loss = self(idx_cond)
             # focus only on the last time step
+            #print(logits.shape)            
             logits = logits[:, -1, :] # becomes (B, C)
+            #print(logits.shape)
             # apply softmax to get probabilities
             probs = F.softmax(logits, dim=-1) # (B, C)
             # sample from the distribution
             idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
+            # Scaling predicted water level to fit the given range            
+            water_level_next = (idx_next + 300)/100
+            #print(water_level_next)
+            #print(water_level_next.shape)
+            
+            # Extract the next co=ordinate at index i to get tensor N of shape [1, 1, 2]
+            N = next_coordinates[:, i:i+1, :]
+            water_level_next = torch.cat((N, water_level_next.unsqueeze(2)),dim=2)
+            #print(water_level_next)
+            #print(water_level_next.shape)
+            #print(currWaterLevel.shape)
             # append sampled index to the running sequence
-            idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
-        return idx
+            currWaterLevel = torch.cat((currWaterLevel, water_level_next), dim=1) # (B, T+1, 3)
+        return currWaterLevel
