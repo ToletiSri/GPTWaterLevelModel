@@ -108,7 +108,7 @@ class GPTWaterLevelModel(nn.Module):
         # idx_wl and targets are both (B,T) tensor of integers
         #print(idx_wl.shape)
         idx_latLong = idx[:, :, :2]         
-        # change water level from 3.07 to 7, i.e get indices. Min water level - 2, max water level 8.99
+        # change water level from 1.99 to 6.3, i.e get indices. Min water level - 1, max water level 7.99
         idx_wl = idx_wl*100 - 300       
 
         # Ensure idx_wl is in the range of indices
