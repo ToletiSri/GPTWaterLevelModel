@@ -108,8 +108,8 @@ class GPTWaterLevelModel(nn.Module):
         # idx_wl and targets are both (B,T) tensor of integers
         #print(idx_wl.shape)
         idx_latLong = idx[:, :, :2]         
-        # change water level from 1.99 to 6.3, i.e get indices. Min water level - 1, max water level 7.99
-        idx_wl = idx_wl*100 - 300       
+        # change water level from 1.99 to 6.3, i.e get indices. Min water level - 1, max water level 6.99
+        idx_wl = idx_wl*100 - 100       
 
         # Ensure idx_wl is in the range of indices
         min_wl, max_wl = 0, 799  # Mapping from original range (2 to 8.99)
@@ -130,7 +130,7 @@ class GPTWaterLevelModel(nn.Module):
         if targets is None:
             loss = None            
         else:
-            targets = targets*100 - 300
+            targets = targets*100 - 100
             targets = torch.round(targets).long()
             B, T, C = logits.shape
             logits = logits.view(B*T, C)
@@ -156,7 +156,7 @@ class GPTWaterLevelModel(nn.Module):
             # sample from the distribution
             idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
             # Scaling predicted water level to fit the given range            
-            water_level_next = (idx_next + 300)/100
+            water_level_next = (idx_next + 100)/100
             #print(water_level_next)
             #print(water_level_next.shape)
             
